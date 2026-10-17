@@ -1,6 +1,10 @@
 # Essence
 
-An Android app built with Kotlin and Jetpack Compose (Material 3).
+A minimal Android launcher with an e-ink look and built-in AI agents. Built with Kotlin and Jetpack Compose.
+
+See [docs/ROADMAP.md](docs/ROADMAP.md) for the plan.
+
+After installing, set Essence as the default home app under *Settings → Apps → Default apps → Home app*.
 
 ## Requirements
 
@@ -21,8 +25,12 @@ An Android app built with Kotlin and Jetpack Compose (Material 3).
 
 ```
 app/src/main/java/com/armaldro/essence/
-├── MainActivity.kt      # entry point
-└── ui/theme/            # Material 3 theme, colors, typography
+├── MainActivity.kt      # HOME activity
+├── EssenceApp.kt        # holds the repositories
+├── data/                # installed apps (LauncherApps) and favorites (DataStore)
+└── ui/
+    ├── home/            # home page, glance header, A–Z app list
+    └── theme/           # e-ink theme: paper and ink colors, serif and monospace type
 ```
 
 Dependency versions live in `gradle/libs.versions.toml`.
