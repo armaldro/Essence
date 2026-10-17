@@ -2,10 +2,11 @@ package com.armaldro.essence.ui.theme
 
 import androidx.compose.ui.graphics.Color
 
-val Purple80 = Color(0xFFD0BCFF)
-val PurpleGrey80 = Color(0xFFCCC2DC)
-val Pink80 = Color(0xFFEFB8C8)
+// E-ink palette: warm paper, near-black ink, one grey for secondary text. No accent colors.
+val Paper = Color(0xFFF2F0EB)
+val Ink = Color(0xFF141414)
+val InkMuted = Color(0xFF5E5C58)
 
-val Purple40 = Color(0xFF6650A4)
-val PurpleGrey40 = Color(0xFF625B71)
-val Pink40 = Color(0xFF7D5260)
+val PaperNight = Color(0xFF0F0F0E)
+val InkNight = Color(0xFFE6E3DC)
+val InkMutedNight = Color(0xFF8E8B85)
