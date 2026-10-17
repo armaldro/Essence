@@ -7,9 +7,9 @@ home page, an A–Z list of every app with a letter rail on the edge, no icon gr
 ## Requirements
 
 1. **E-ink look.** Information is shown like an e-paper display.
-2. **AI agent widgets.** Home-screen widgets work with more than one AI agent.
-3. **Memory and screen help.** The launcher remembers things about the user and helps inside other apps, for example by
-   reading the screen and drafting a reply in Chrome or a messaging app.
+2. **AI agent cards.** Essence has its own home-screen cards, powered by Claude.
+3. **Memory and hands-free help.** The launcher remembers things about the user. The user can speak a command, and
+   Essence carries it out on the phone by itself, for example replying to a message in Chrome or a messaging app.
 
 ## Phase 1: launcher shell (done)
 
@@ -22,50 +22,47 @@ home page, an A–Z list of every app with a letter rail on the edge, no icon gr
 - Theme: warm paper and near-black ink, with an inverted version at night. Serif text with monospace labels, hairline
   rules, no ripples, no transitions, and no dynamic color.
 
-## Phase 2: agent widgets
+## Phase 2: Claude agent, memory and the hands-free assistant (done)
 
-The words "agent widgets" can mean two different things, and both are planned:
+Requirements 2 and 3, built on Claude (`claude-opus-5-5` by default; the model can be changed in Settings).
 
-| Track | What it is | How |
-| --- | --- | --- |
-| **2a. Native agent cards** | Essence's own home-page cards. Each card is tied to an agent (Claude, ChatGPT, Gemini or a local model). Examples: a daily brief, "ask anything", a summary of the notification inbox. | An `AgentProvider` interface with one implementation per vendor. API keys stay on the device in an encrypted store. Cards render in the same e-ink style. |
-| **2b. Hosting third-party widgets** | Place the official Android widgets of installed AI apps (Gemini, ChatGPT, Claude, Perplexity and others) on the home page. | `AppWidgetHost` with `AppWidgetManager.bindAppWidgetIdIfAllowed` and a widget picker. These widgets draw their own colors, so an optional grayscale filter keeps them on theme. |
+- **Agent cards.** Home-page cards, each with a title and a prompt. Tap a card to run its prompt. The answer is
+  printed on the card in plain text. Long-press a card to edit or delete it. Cards refresh only when tapped.
+- **Memory.** Claude has a `remember` tool for saving durable facts about the user. Saved facts are sent with every
+  request. Settings lists every memory, and each one can be deleted or added by hand.
+- **Assistant (voice → autonomous action).** Tap ✦ SPEAK on the home page or the ✦ bubble over any app, then say a
+  command, for example "reply to Sam on WhatsApp that I'll be 10 minutes late". An `AccessibilityService` gives
+  Claude these tools:
+  - `read_screen`: a numbered outline of the foreground app's elements
+  - `screenshot` (Android 11+)
+  - `tap`, `long_press`, `tap_point`, `type_text` and `scroll`
+  - `press_key` (back, home, recents, notifications)
+  - `open_app` and `wait`
+  - `ask_user`
 
-Building blocks:
-
-- `agents/AgentProvider.kt`: `suspend fun complete(messages, tools): Flow<Chunk>`, implemented per provider.
-- Settings screen: add an agent, choose its provider and model, paste an API key, and set a default agent per card.
-- Cards refresh on demand or on a schedule through WorkManager. Nothing polls in the background.
-
-## Phase 3: memory
-
-- A Room database on the device stores **memories** (short facts about the user, such as preferences, people and
-  projects) and **notes**.
-- Before a call, the agent receives the memories relevant to the request. It starts with keyword ranking; embeddings can
-  come later.
-- A "Remember this" action is available from any agent card or from the screen-assist overlay. A memory page lets the
-  user see, edit and delete every memory.
-- Encrypted backup and export, so memories survive a phone change.
-
-## Phase 4: screen assist (help inside other apps)
-
-- An `AccessibilityService` reads the text tree of the app in the foreground (`getRootInActiveWindow`). It can capture
-  the screen on Android 11 and later (`takeScreenshot`) for apps whose text isn't exposed.
-- A small floating "✦" button appears over other apps (an accessibility overlay). Tapping it sends the visible
-  conversation and the relevant memories to the chosen agent, which returns 2–3 reply drafts.
-- The user picks a draft. Essence fills it into the app's text field with `ACTION_SET_TEXT`, or copies it to the
-  clipboard as a fallback. **Essence never presses Send.** The user always sends the message.
-- Per-app allow list: the service does nothing in apps the user has not turned on. Password fields and banking apps are
-  always skipped.
+  Each action returns the updated screen. While a command runs, a status strip shows each step, and the bubble becomes
+  ■, which stops it.
+- **Guardrails.** Claude must call `ask_user` and get an explicit yes before it sends, posts, buys, deletes, accepts
+  terms or changes account settings. It never enters passwords, codes or payment details. Text on the screen is
+  treated as information, never as instructions. Password fields are masked in the outline.
+- **API key.** It is stored encrypted with an Android Keystore key. Requests go straight from the phone to the Claude
+  API.
 
 ### Caveats
 
-- **Privacy:** screen text goes to whichever AI provider the user picks. A local model avoids this, at the cost of quality.
-- **Google Play policy:** Play restricts accessibility services that aren't for accessibility, and it would likely reject
-  this app. Plan to sideload it, or distribute it through F-Droid or GitHub Releases.
-- **Android 13+ restricted settings:** a sideloaded app must be allowed under *App info → ⋮ → Allow restricted settings*
-  before its accessibility service can be turned on.
-- Some apps block screen capture (`FLAG_SECURE`). Assist still works from the text tree when an app exposes it.
+- **Privacy:** while a command runs, the screen outline and any screenshots are sent to Claude.
+- **Google Play policy:** Play restricts accessibility services that aren't for accessibility, and it would likely
+  reject this app. Plan to sideload it, or distribute it through F-Droid or GitHub Releases.
+- **Android 13+ restricted settings:** a sideloaded app must be allowed under *App info → ⋮ → Allow restricted
+  settings* before its accessibility service can be turned on.
+- Some apps block screen capture (`FLAG_SECURE`). The assistant then relies on the text outline, if the app exposes
+  one.
+
+## Phase 3: next
+
+- A hands-free wake phrase, so a command doesn't need a tap first.
+- Agent cards that refresh on a schedule (WorkManager), and cards that can use the device tools.
+- Hosting third-party app widgets on the home page.
 
 ## Later
 

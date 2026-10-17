@@ -1,3 +1,5 @@
 <resources>
     <string name="app_name">Essence</string>
+    <string name="assist_service_label">Essence assistant</string>
+    <string name="assist_service_description">Lets Essence read what is on your screen and tap, type, scroll and open apps when you give it a command. Screen content is sent to Claude, using your own API key, only while a command is running. Essence asks before sending, buying, deleting or changing settings, and the ■ button stops it at any time.</string>
 </resources>

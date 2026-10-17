@@ -32,42 +32,108 @@ import androidx.compose.ui.window.Dialog
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.armaldro.essence.data.AppEntry
 import com.armaldro.essence.data.FavoritesStore
+import com.armaldro.essence.assist.AssistService
+import com.armaldro.essence.data.AgentCard
+import com.armaldro.essence.ui.agent.AgentCardEditor
+import com.armaldro.essence.ui.agent.AgentCards
+import com.armaldro.essence.ui.agent.AgentViewModel
+import com.armaldro.essence.ui.components.InkButton
+import com.armaldro.essence.ui.components.InkDialog
+import com.armaldro.essence.ui.settings.SettingsScreen
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
+import androidx.compose.ui.input.nestedscroll.NestedScrollSource
+import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.unit.Velocity
+
+enum class Page { Home, Apps, Settings }
 
 @Composable
-fun LauncherRoot(viewModel: HomeViewModel, drawerOpen: Boolean, onDrawerOpenChange: (Boolean) -> Unit) {
+fun LauncherRoot(
+    viewModel: HomeViewModel,
+    agentViewModel: AgentViewModel,
+    page: Page,
+    onPageChange: (Page) -> Unit,
+) {
     val state by viewModel.state.collectAsStateWithLifecycle()
+    val cards by agentViewModel.cards.collectAsStateWithLifecycle()
+    val refreshing by agentViewModel.refreshing.collectAsStateWithLifecycle()
     var menuFor by remember { mutableStateOf<AppEntry?>(null) }
+    var editing by remember { mutableStateOf<AgentCard?>(null) }
+    var creating by remember { mutableStateOf(false) }
+    var notice by remember { mutableStateOf<String?>(null) }
     val context = LocalContext.current
 
-    BackHandler(enabled = drawerOpen) {
+    BackHandler(enabled = page == Page.Apps) {
         viewModel.setQuery("")
-        onDrawerOpenChange(false)
+        onPageChange(Page.Home)
     }
 
     val launch: (AppEntry) -> Unit = { app ->
         viewModel.launch(app)
         viewModel.setQuery("")
-        onDrawerOpenChange(false)
+        onPageChange(Page.Home)
     }
 
     Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
-        // No transition: e-ink screens swap pages in one refresh.
-        if (drawerOpen) {
-            AppDrawer(
+        // No transitions: e-ink screens swap pages in one refresh.
+        when (page) {
+            Page.Apps -> AppDrawer(
                 state = state,
                 onQueryChange = viewModel::setQuery,
                 onLaunch = launch,
                 onLongPress = { menuFor = it },
-                onClose = { viewModel.setQuery(""); onDrawerOpenChange(false) },
+                onClose = { viewModel.setQuery(""); onPageChange(Page.Home) },
             )
-        } else {
-            Home(
+            Page.Settings -> SettingsScreen(agentViewModel, onClose = { onPageChange(Page.Home) })
+            Page.Home -> Home(
                 favorites = state.favorites,
                 onLaunch = launch,
                 onLongPress = { menuFor = it },
-                onOpenDrawer = { onDrawerOpenChange(true) },
+                onOpenDrawer = { onPageChange(Page.Apps) },
                 onPullDown = { expandNotifications(context) },
+                onSpeak = {
+                    val assistant = AssistService.instance
+                    if (assistant != null) assistant.listen()
+                    else notice = "Turn on screen access for the assistant in Settings first."
+                },
+                onSettings = { onPageChange(Page.Settings) },
+                cards = {
+                    AgentCards(
+                        cards = cards,
+                        refreshing = refreshing,
+                        onRefresh = agentViewModel::refresh,
+                        onEdit = { card -> if (card == null) creating = true else editing = card },
+                    )
+                },
             )
+        }
+    }
+
+    if (creating || editing != null) {
+        AgentCardEditor(
+            card = editing,
+            onSave = { card ->
+                agentViewModel.saveCard(card, refreshAfter = editing?.prompt != card.prompt)
+                creating = false; editing = null
+            },
+            onDelete = { card -> agentViewModel.deleteCard(card.id); editing = null },
+            onDismiss = { creating = false; editing = null },
+        )
+    }
+
+    notice?.let { message ->
+        InkDialog(onDismiss = { notice = null }) {
+            Text(message, style = MaterialTheme.typography.bodyLarge)
+            Row {
+                InkButton("Open settings") { notice = null; onPageChange(Page.Settings) }
+                Spacer(Modifier.weight(1f))
+                InkButton("OK") { notice = null }
+            }
         }
     }
 
@@ -97,7 +163,29 @@ private fun Home(
     onLongPress: (AppEntry) -> Unit,
     onOpenDrawer: () -> Unit,
     onPullDown: () -> Unit,
+    onSpeak: () -> Unit,
+    onSettings: () -> Unit,
+    cards: @Composable () -> Unit,
 ) {
+    // Swipes the scrolling middle can't use (it is already at its end) still open the drawer or the shade.
+    val overscroll = remember {
+        object : NestedScrollConnection {
+            var total = 0f
+            override fun onPostScroll(consumed: Offset, available: Offset, source: NestedScrollSource): Offset {
+                if (source == NestedScrollSource.UserInput) total += available.y
+                return Offset.Zero
+            }
+            override suspend fun onPostFling(consumed: Velocity, available: Velocity): Velocity {
+                when {
+                    total < -SWIPE_THRESHOLD -> onOpenDrawer()
+                    total > SWIPE_THRESHOLD -> onPullDown()
+                }
+                total = 0f
+                return Velocity.Zero
+            }
+        }
+    }
+
     Column(
         Modifier
             .fillMaxSize()
@@ -117,35 +205,54 @@ private fun Home(
             }
     ) {
         Glance(Modifier.fillMaxWidth())
-        Spacer(Modifier.weight(1f))
-        if (favorites.isEmpty()) {
-            Text(
-                "Long-press any app in the list\nto pin it here.",
-                style = MaterialTheme.typography.bodyLarge,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
+        Column(
+            Modifier
+                .weight(1f)
+                .nestedScroll(overscroll)
+                .verticalScroll(rememberScrollState())
+                .padding(top = 16.dp)
+        ) {
+            cards()
+            Spacer(Modifier.height(24.dp))
+            if (favorites.isEmpty()) {
+                Text(
+                    "Long-press any app in the list\nto pin it here.",
+                    style = MaterialTheme.typography.bodyLarge,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            favorites.forEach { app ->
+                Text(
+                    text = app.label,
+                    style = MaterialTheme.typography.headlineMedium,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .combinedClickable(onLongClick = { onLongPress(app) }) { onLaunch(app) }
+                        .padding(vertical = 8.dp),
+                )
+            }
         }
-        favorites.forEach { app ->
-            Text(
-                text = app.label,
-                style = MaterialTheme.typography.headlineMedium,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .combinedClickable(onLongClick = { onLongPress(app) }) { onLaunch(app) }
-                    .padding(vertical = 8.dp),
-            )
+        HorizontalDivider(Modifier.padding(top = 12.dp), thickness = 1.dp, color = MaterialTheme.colorScheme.outline)
+        Row(Modifier.fillMaxWidth()) {
+            BottomAction("↑  ALL APPS", onOpenDrawer)
+            Spacer(Modifier.weight(1f))
+            BottomAction("✦  SPEAK", onSpeak)
+            Spacer(Modifier.weight(1f))
+            BottomAction("SETTINGS", onSettings)
         }
-        Spacer(Modifier.height(24.dp))
-        Text(
-            text = "↑  ALL APPS",
-            style = MaterialTheme.typography.labelLarge,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier
-                .fillMaxWidth()
-                .combinedClickable { onOpenDrawer() }
-                .padding(vertical = 12.dp),
-        )
     }
+}
+
+@Composable
+private fun BottomAction(label: String, onClick: () -> Unit) {
+    Text(
+        text = label,
+        style = MaterialTheme.typography.labelLarge,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        modifier = Modifier
+            .combinedClickable(onClick = onClick)
+            .padding(vertical = 12.dp),
+    )
 }
 
 @Composable
